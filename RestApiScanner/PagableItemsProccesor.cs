@@ -1,5 +1,4 @@
-﻿using FsClients.DataTypes;
-using Serilog;
+﻿using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -34,7 +33,7 @@ namespace Demo.RestApiScanner
                                      List<InHouseSpaceRights> rights,
                                      CancellationToken token,
                                      string pageSize,
-                                     List<IPagableItemsProccesor<ICodable, TCriteria>> nextLevel)
+                                     List<IPagableItemsProccesor<ICodable, TCriteria>>? nextLevel)
         {
             _inHouseClient = inHouseClient;
             _findFunc = findFunc;
@@ -78,7 +77,7 @@ namespace Demo.RestApiScanner
                     var node = _createNodeFromItemFunc(itemDetails, path);
 
                     Log.Debug($"Added Node with ID: {node.Id}, \r\n Name: {node.Name},\r\n Type: {node.Type}, \r\n Path: {node.Path}");
-                    _inHouseClient.OnInfo?.Invoke(node);
+                    _inHouseClient.PublishInfo(node);
 
                     try
                     {

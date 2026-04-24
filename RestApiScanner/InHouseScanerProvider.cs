@@ -1,6 +1,4 @@
-﻿using HttpProvider.Providers;
-using System;
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace Demo.RestApiScanner
 {
@@ -9,6 +7,8 @@ namespace Demo.RestApiScanner
         private const string _apiRoot = "rest/api";
         private readonly TimeSpan _requestTimeout = TimeSpan.FromSeconds(5);
         private readonly int _requestRetryCount = 5;
+
+        public ClientError LastError { get; internal set; }
 
         public InHouseScanerProvider(string host,
                                      string domain,
@@ -24,6 +24,11 @@ namespace Demo.RestApiScanner
         public SpaceUsersGroupsResponse GetSpacePermissions(string spaceCode) =>
             TryApiGet<SpaceUsersGroupsResponse>($"{_apiRoot}/space/v3/{Uri.EscapeDataString(spaceCode)}/permissions", _requestTimeout, _requestRetryCount);
 
+        private T TryApiGet<T>(string v, TimeSpan requestTimeout, int requestRetryCount)
+        {
+            throw new NotImplementedException();
+        }
+
         public UnitPermissionsResponse GetUnitPermissions(string unitCode) =>
             TryApiGet<UnitPermissionsResponse>($"{_apiRoot}/unit/v1/permissions/{Uri.EscapeDataString(unitCode)}", _requestTimeout, _requestRetryCount);
 
@@ -31,6 +36,11 @@ namespace Demo.RestApiScanner
         {
             var json = JsonSerializer.Serialize(request);
             return ApiPost<FindPagableResponse<SpaceDto>>($"{_apiRoot}/space/v2/find/all", json);
+        }
+
+        private T ApiPost<T>(string v, string json)
+        {
+            throw new NotImplementedException();
         }
 
         public FindPagableResponse<UnitContent> FindUnits(InHousePagableFindRequest<FilterCriteria> request)
@@ -65,5 +75,10 @@ namespace Demo.RestApiScanner
 
         public byte[] DownloadUnitFile(string fileId, long size) =>
             Raw($"{_apiRoot}/unit-files/v1/download?fileId={Uri.EscapeDataString(fileId)}", size);
+
+        private byte[] Raw(string v, long size)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

@@ -1,16 +1,10 @@
 ﻿using System.Data;
-using Common;
-using ClickHouseProvider.Objects;
-using ActiveDirectoryAnalyzer.Writers;
-using ADStructProvider = ClickHouseProvider.Providers.StructureEntries.LdapStructureEntriesProvider;
-using Microsoft.Extensions.Configuration;
-using ClickHouseProvider.Providers.StructureEntries;
 using System.Text.Json;
-using Db.Context;
 using System.Text.RegularExpressions;
-using Serilog.Sinks.Syslog;
+using System.Linq;
 using Serilog;
-using static Common.Constants;
+using Demo;
+using Microsoft.Extensions.Configuration;
 
 namespace RiskAnalyzer
 {
@@ -19,12 +13,13 @@ namespace RiskAnalyzer
         [Flags]
         enum RiskSet : long
         {
-            None    = 0,
-            User    = 0x01,
-            Group   = 0x02,
-            Org     = 0x04,
-            Comp    = 0x08,
+            None        = 0,
+            User        = 0x01,
+            Group       = 0x02,
+            Org         = 0x04,
+            Comp        = 0x08,
             UserCompOrg = User | Org | Comp,
+
             All = User | Group | Org | Comp,
         }
 
@@ -35,17 +30,20 @@ namespace RiskAnalyzer
             internal bool IsAdmin { get; }
             public string[] AclInStrings { get; }
             public List<string> Aces { get; }
-            public LdapStructureEntryEnumerable Node { get; } = new LdapStructureEntryEnumerable();
+            public LdapStructureEntry Node { get; } = new LdapStructureEntry();
             public string[]? Members { get; }
             public uint Uac { get; }
 
             public LdapStructureEntryNodeContext(LdapStructureEntryEnumerable node, bool _isFreeIpa, bool _isActiveDirectory, bool _isRedAdm)
             {
                 Node = node;
-                Members = GetAttribute(node, "member")?.Split(_isFreeIpa || _isActiveDirectory ? ';' : ',', StringSplitOptions.RemoveEmptyEntries);
+                var membersStr = GetAttribute(node, "member");
+                Members = string.IsNullOrEmpty(membersStr)
+                    ? Array.Empty<string>()
+                    : membersStr.Split(_isFreeIpa || _isActiveDirectory ? ';' : ',', StringSplitOptions.RemoveEmptyEntries);
                 Uac = GetAttributeAsUInt32(node, "useraccountcontrol");
                 IsAdmin = GetAttributeAsUInt32(node, "admincount") == 1;
-                AclInStrings = GetAttribute(node, _ntSecurityDescriptor).Split('\n');
+                AclInStrings = (GetAttribute(node, _ntSecurityDescriptor) ?? string.Empty).Split('\n');
                 Aces = AclInStrings.Where(s => s.Contains("ace", StringComparison.OrdinalIgnoreCase)).ToList();
             }
         }
@@ -169,9 +167,8 @@ namespace RiskAnalyzer
         private IEnumerable<RiskAttributes> _computersNotSupportedOS;
         private readonly string _subQueryLeftTable;
         private readonly string _subQuery;
-        private readonly DbAuthProvider _auth;
-        private readonly FsDbContextExt _fsDbContext;
-        private readonly ADStructProvider _provider;
+        private readonly FsDbContextExtDbContext _fsDbContext;
+        private readonly LdapStructureEntriesProvider _provider;
         private readonly RisksWriter _writer;
         private readonly List<string> _fields;
         private readonly List<string> _excludeRiskUsersArr;
@@ -194,20 +191,21 @@ namespace RiskAnalyzer
             _configuration = configuration;
             _storeId = storeId;
 
-            _postgressCon = configuration.GetConnectionString("Postgres");
-            _clickhouseCon = configuration.GetConnectionString("Clickhouse");
+            _postgressCon = configuration.GetConnectionString("Postgres")
+                ?? throw new InvalidOperationException("Connection string 'Postgres' is required.");
+            _clickhouseCon = configuration.GetConnectionString("Clickhouse")
+                ?? throw new InvalidOperationException("Connection string 'Clickhouse' is required.");
 
-            _fsDbContext = new FsDbContextExt(_postgressCon);
+            _fsDbContext = new FsDbContextExtDbContext(_postgressCon);
 
-            _auth = new DbAuthProvider(_postgressCon);
-            _provider = new LdapStructureEntriesProvider(_clickhouseCon, _auth);
+            _provider = new LdapStructureEntriesProvider(_clickhouseCon);
 
             var excludeRiskUsers = _fsDbContext.LdapServerSettings.Find(storeId)?.ExcludeRiskUsers;
             _excludeRiskUsersArr = !string.IsNullOrWhiteSpace(excludeRiskUsers) ? JsonSerializer.Deserialize<List<string>>(excludeRiskUsers) ?? new List<string>() : new List<string>();
 
             var ldapSetttings = _fsDbContext.LdapServerSettings.Find(storeId) ?? throw new ArgumentException($"Store with Id: {_storeId} was not found");
             _ldapServerType = (LdapServerType)ldapSetttings.Type;
-            _writer = new RisksWriter(_clickhouseCon, _storeId, authProvider: _auth);
+            _writer = new RisksWriter(_clickhouseCon, _storeId);
 
             if (_ldapServerType == LdapServerType.FreeIpa)
                 _isFreeIpa = true;
@@ -290,8 +288,8 @@ namespace RiskAnalyzer
                 .ToArray();
 
             //Дизаблед пользователи
-            Predicate<RiskAttributes> disabledFilter = _isFreeIpa ? (RiskAttributes x) => x.GetAttribute(_nsaccountLock).ToInt() == 1 :
-                (RiskAttributes x) => (x.GetAttribute(_userAccControl).ToInt() & ACCOUNTDISABLED) == ACCOUNTDISABLED;
+            Predicate<RiskAttributes> disabledFilter = _isFreeIpa ? (RiskAttributes x) => Convert.ToInt32(x.GetAttribute(_nsaccountLock)) == 1 :
+                (RiskAttributes x) => (Convert.ToInt32(x.GetAttribute(_userAccControl)) & ACCOUNTDISABLED) == ACCOUNTDISABLED;
 
             _disabledUsers = _provider.Get<RiskAttributes>
                 (_storeId, $"type={USER} AND {GetQueryValueFromArraysPairByName(_isFreeIpa ? _nsaccountLock : _userAccControl)} !='' ", _fields)
@@ -318,7 +316,7 @@ namespace RiskAnalyzer
             //Анализ Рисков по всему множеству
             foreach (var entity in _provider.Get<LdapStructureEntryEnumerable>(_storeId))
             {
-                //запись может долго обрабатываться, соединение потому страемся как можно быстрее взять слейдующую
+                //запись может долго обрабатываться, соединение потому страаемся как можно быстрее взять слейдующую
                 ThreadPool.QueueUserWorkItem((state) => _riskCalculator.Calculate(entity));
                 lock (_writerLock) { _writer.Add(entity); entityCount++; }
             }
@@ -349,7 +347,7 @@ namespace RiskAnalyzer
             return false;
         }
 
-        private bool IsPwdsInDescriptor(LdapStructureEntryEnumerable node) 
+        private bool IsPwdsInDescriptor(LdapStructureEntry node) 
             => node.Acl.Any(acl => acl == _selfCantChangePwdStr || acl == _everyoneCantChangePwdStr);
 
         private bool AllExtendedRightsRisk(LdapStructureEntryNodeContext node)
@@ -390,7 +388,8 @@ namespace RiskAnalyzer
         {
             try
             {
-                return Array.Find(entry.AttrName, val => val.Equals(attrName, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
+                if (entry?.AttrNames == null) return string.Empty;
+                return Array.Find(entry.AttrNames, val => val?.Equals(attrName, StringComparison.OrdinalIgnoreCase) ?? false) ?? string.Empty;
             }
             catch (Exception)
             {

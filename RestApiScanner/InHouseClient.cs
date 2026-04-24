@@ -1,9 +1,11 @@
-﻿namespace Demo.RestApiScanner
+﻿using Serilog;
+
+namespace Demo.RestApiScanner
 {
     public class InHouseClient : Client
     {
         private bool _disposed = false;
-        private string _savePoint;
+        private string? _savePoint;
         private string[] _locations = new string[0];
         private NodeInfo _lastNode;
         private CancellationToken _token;
@@ -12,6 +14,10 @@
         private readonly ClientConfig _config;
         private readonly string _pageSize = "100";
         private readonly PagableItemsProccesor<SpaceDto, FilterCriteria> _spaceProccesor;
+
+        public object LastError { get; private set; }
+
+        public event Action<NodeInfo> OnInfo;
 
         public InHouseClient(ClientConfig config)
         {
@@ -116,12 +122,6 @@
             Dispose(false);
         }
 
-        public override void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
         protected virtual void Dispose(bool disposing)
         {
             if (!_disposed)
@@ -139,12 +139,12 @@
             };
 
             var spaces = _provider.FindSpaces(req);
-            var err = ErrorHandler.Translate(_provider.LastError);
+            var err = _provider.LastError;
             Log.Debug($"Checked conn : {err}");
             return new ClientErrorInfo(err != ClientError.None ? err : (spaces?.Content?.Any() == false ? ClientError.DataError : ClientError.None));
         }
 
-        public override async Task<NodeInfo> GetTreeAsync(CancellationToken token, string savePoint = null)
+        public override async Task<NodeInfo?> GetTreeAsync(CancellationToken token, string? savePoint = null)
         {
             _savePoint = savePoint;
             _locations = _config.Path ?? new string[0];
@@ -156,7 +156,7 @@
             catch (Exception ex)
             {
                 Log.Error(ex, "Error during start scanning of VWord");
-                LastError = ErrorHandler.Translate(_provider.LastError);
+                LastError = _provider.LastError;
                 return null;
             }
 
@@ -173,7 +173,7 @@
 
         public bool SkipPath(string path)
         {
-            if (_locations.Length == 0 || _locations.Any(loc => path.StartsWith(loc)))
+            if (_locations.Length == 0 || _locations.Any(path.StartsWith))
             {
                 Log.Debug($"Matched location in {path}");
 
@@ -192,8 +192,8 @@
 
         public class InHouseId
         {
-            public string Id { get; set; }
-            public StorageEntryType Type { get; set; }
+            public string Id { get; set; } = string.Empty;
+            public StorageEntryType Type { get; set; } = StorageEntryType.Directory;
         }
 
         public class InHouseSpaceRights
@@ -208,7 +208,7 @@
                                 long level,
                                 string name,
                                 string path,
-                                string owner,
+                                string? owner,
                                 long size,
                                 StorageEntryType type,
                                 DateTime created,
@@ -230,6 +230,11 @@
                 Acls = ConvertToAclStructure(rights),
                 Attrs = attr
             };
+        }
+
+        private string[] ConvertToAclStructure(List<InHouseSpaceRights> rights)
+        {
+            throw new NotImplementedException();
         }
 
         public override byte[] Read(string path, long size)
@@ -391,6 +396,11 @@
                 Log.Warning(ex, "Error during GetFileAttributes");
             }
             return attr;
+        }
+
+        internal void PublishInfo(NodeInfo node)
+        {
+            OnInfo?.Invoke(node);
         }
     }
 }

@@ -1,6 +1,4 @@
-﻿using Amazon.Runtime.Internal;
-using FsClients.Seafile.Api;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 
@@ -19,26 +17,26 @@ namespace Demo.RestApiScanner
     public class PagingInfo
     {
         [JsonPropertyName("page")]
-        public string Page { get; set; }
+        public string? Page { get; set; }
 
         [JsonPropertyName("size")]
-        public string Size { get; set; }
+        public string? Size { get; set; }
     }
 
     public class InHousePagableFindRequest<TFilter> : IPageable, IRequest<TFilter>
         where TFilter : ICriteriable, new()
     {
         [JsonPropertyName("filter")]
-        public TFilter Filter { get; set; }
+        public TFilter Filter { get; set; } = new TFilter();
 
         [JsonPropertyName("page")]
-        public PagingInfo Page { get; set; }
+        public PagingInfo Page { get; set; } = new PagingInfo();
     }
 
     public class UnitCommentsRequest : IPageable
     {
         [JsonPropertyName("unitCode")]
-        public string UnitCode { get; set; }
+        public string UnitCode { get; set; } = string.Empty;
 
         [JsonPropertyName("page")]
         public PagingInfo Page { get; set; } = new PagingInfo();
@@ -52,13 +50,13 @@ namespace Demo.RestApiScanner
     public class FilterCriteria : ICriteriable
     {
         [JsonPropertyName("textSearch")]
-        public string TextSearch { get; set; }
+        public string TextSearch { get; set; } = string.Empty;
     }
 
     public class UnitCriteria : ICriteriable
     {
         [JsonPropertyName("spaces")]
-        public List<string> Spaces { get; set; }
+        public List<string> Spaces { get; set; } = new List<string>();
 
         public string TextSearch { get => Spaces.FirstOrDefault(); set => Spaces = new List<string> { value }; }
     }

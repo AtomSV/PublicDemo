@@ -45,11 +45,8 @@ namespace ActiveDirectoryAnalyzer.DomainAnalysis
             _allEdgesFromCache = allEdgesFromCache;
         }
 
-        public GraphPathEnumerable FindPath()
+        public GraphPathEnumerable? FindPath()
         {
-
-            //_startPoint = 14148830849422318981;
-            //_endPoint = 8237475327222802441;
             var startEdge = new GraphEdge { To = _startPoint };
             var currStep = new HashSet<GraphEdge>() { startEdge };
             var nextStep = new HashSet<GraphEdge>();
@@ -65,7 +62,7 @@ namespace ActiveDirectoryAnalyzer.DomainAnalysis
                         continue;
 
                     //var neighbors = _allEdges.Where(t => t.From == currStep[iNode].To).ToArray();
-                    PathDomainLink pathback = new PathDomainLink();
+                    PathDomainLink pathback;
                     foreach (var neighbor in neighbors)
                     {
                         //Такое ребро в подсвеченных?
